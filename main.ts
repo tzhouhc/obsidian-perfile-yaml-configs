@@ -1,81 +1,87 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, MarkdownView, WorkspaceLeaf, Plugin, PluginSettingTab, Setting, FrontMatterCache, debounce, ViewState } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
+interface PerfileConfigsSettings {
 	mySetting: string;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
+const DEFAULT_SETTINGS: PerfileConfigsSettings = {
 	mySetting: 'default'
 }
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+type PerfileConfigHandler = (app: App, leaf: WorkspaceLeaf, value: any) => void;
+
+function getFrontMatter(leaf: WorkspaceLeaf): FrontMatterCache {
+	let view = leaf.view instanceof MarkdownView ? leaf.view : null;
+	if (null === view) {
+		return null;
+	}
+	const fileCache = this.app.metadataCache.getFileCache(view.file);
+	return fileCache.frontmatter;
+}
+
+function getOpenLeaves(app: App): WorkspaceLeaf[] {
+	let leaves: WorkspaceLeaf[] = [];
+	app.workspace.iterateAllLeaves((leaf) => {
+		let view = leaf.view instanceof MarkdownView ? leaf.view : null;
+		if (null === view) {
+			return;
+		}
+		leaves.push(leaf);
+	})
+	return leaves;
+}
+
+export default class PerfileConfigsPlugin extends Plugin {
+	settings: PerfileConfigsSettings;
+
+	MAIN_KEY = "perfile_configs";
+	frontmatterKeyRecords = new Map<string, PerfileConfigHandler>();
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+		// This adds a settings tab so the user can configure various aspects of the plugin
+		this.addSettingTab(new PerfileConfigsSettingTab(this.app, this));
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+		// default utility: set viewmode based on yaml key 'viewmode';
+		this.frontmatterKeyRecords.set("viewmode", (app: App, leaf: WorkspaceLeaf, value: any) => {
+			console.log(`Attempting to set state to ${value}`);
+			let state = leaf.getViewState();
+			state.state.mode = value;
+			if (value === "source") {
+				state.state.source = true;
+			} else if (value === "live") {
+				state.state.mode = "source";
+				state.state.source = false;
+			}
+			leaf.setViewState(state);
+		});
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
+		const updateLeaves = async (): Promise<void> => {
+			var leaves = getOpenLeaves(this.app);
+			for (let leaf of leaves) {
+				console.log(leaf.getViewState().state);
+				let frontmatter = getFrontMatter(leaf);
+				if (frontmatter && this.MAIN_KEY in frontmatter) {
+					let options = getFrontMatter(leaf)[this.MAIN_KEY];
+					if (options) {
+						console.log(options);
+						for (let p of this.frontmatterKeyRecords.entries()) {
+							if (options[p[0]]) {
+								p[1](this.app, leaf, options[p[0]]);
+							}
+						}
 					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
 				}
 			}
-		});
+		}
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		// register on leaf change; whenever a view changes, the view should be checked
+		// for potential updates.
+		this.registerEvent(
+			this.app.workspace.on(
+				'active-leaf-change',
+				debounce(updateLeaves, 0)));
 	}
 
 	onunload() {
@@ -91,26 +97,10 @@ export default class MyPlugin extends Plugin {
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+class PerfileConfigsSettingTab extends PluginSettingTab {
+	plugin: PerfileConfigsPlugin;
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: PerfileConfigsPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -129,7 +119,6 @@ class SampleSettingTab extends PluginSettingTab {
 				.setPlaceholder('Enter your secret')
 				.setValue(this.plugin.settings.mySetting)
 				.onChange(async (value) => {
-					console.log('Secret: ' + value);
 					this.plugin.settings.mySetting = value;
 					await this.plugin.saveSettings();
 				}));

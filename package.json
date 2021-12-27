@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
-	"version": "0.12.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"name": "obsidian-perfile-yaml-configs",
+	"version": "0.0.1",
+	"description": "Attempts to read config keys from individual file's YAML frontmatter, and update pane settings accordingly.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
