@@ -1,4 +1,4 @@
-import { App, MarkdownView, WorkspaceLeaf, Plugin, PluginSettingTab, Setting, FrontMatterCache, debounce, ViewState } from 'obsidian';
+import { App, MarkdownView, WorkspaceLeaf, Plugin, PluginSettingTab, Setting, FrontMatterCache, debounce } from 'obsidian';
 
 interface PerfileConfigsSettings {
 	mySetting: string;
@@ -10,23 +10,25 @@ const DEFAULT_SETTINGS: PerfileConfigsSettings = {
 
 type PerfileConfigHandler = (app: App, leaf: WorkspaceLeaf, value: any) => void;
 
+// Given a pane, find the content of the open file and return its frontmatter
+// if any.
 function getFrontMatter(leaf: WorkspaceLeaf): FrontMatterCache {
 	let view = leaf.view instanceof MarkdownView ? leaf.view : null;
-	if (null === view) {
+	if (!view) {
 		return null;
 	}
 	const fileCache = this.app.metadataCache.getFileCache(view.file);
 	return fileCache.frontmatter;
 }
 
+// List all leaves.
 function getOpenLeaves(app: App): WorkspaceLeaf[] {
 	let leaves: WorkspaceLeaf[] = [];
 	app.workspace.iterateAllLeaves((leaf) => {
 		let view = leaf.view instanceof MarkdownView ? leaf.view : null;
-		if (null === view) {
-			return;
+		if (view) {
+			leaves.push(leaf);
 		}
-		leaves.push(leaf);
 	})
 	return leaves;
 }
@@ -45,7 +47,6 @@ export default class PerfileConfigsPlugin extends Plugin {
 
 		// default utility: set viewmode based on yaml key 'viewmode';
 		this.frontmatterKeyRecords.set("viewmode", (app: App, leaf: WorkspaceLeaf, value: any) => {
-			console.log(`Attempting to set state to ${value}`);
 			let state = leaf.getViewState();
 			state.state.mode = value;
 			if (value === "source") {
@@ -57,15 +58,19 @@ export default class PerfileConfigsPlugin extends Plugin {
 			leaf.setViewState(state);
 		});
 
+		this.frontmatterKeyRecords.set("pinned", (app: App, leaf: WorkspaceLeaf, value: any) => {
+			if (value) {
+				leaf.setPinned(true);
+			}
+		});
+
 		const updateLeaves = async (): Promise<void> => {
 			var leaves = getOpenLeaves(this.app);
 			for (let leaf of leaves) {
-				console.log(leaf.getViewState().state);
 				let frontmatter = getFrontMatter(leaf);
 				if (frontmatter && this.MAIN_KEY in frontmatter) {
 					let options = getFrontMatter(leaf)[this.MAIN_KEY];
 					if (options) {
-						console.log(options);
 						for (let p of this.frontmatterKeyRecords.entries()) {
 							if (options[p[0]]) {
 								p[1](this.app, leaf, options[p[0]]);
