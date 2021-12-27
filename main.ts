@@ -33,10 +33,54 @@ function getOpenLeaves(app: App): WorkspaceLeaf[] {
 	return leaves;
 }
 
+function setViewState(leaf: WorkspaceLeaf, mode: string) {
+	let state = leaf.getViewState();
+	if (mode === "source") {
+		state.state.mode = mode;
+		state.state.source = true;
+	} else if (mode === "live") {
+		state.state.mode = "source";
+		state.state.source = false;
+	} else if (mode === "preview") {
+		state.state.mode = "preview";
+	}
+	leaf.setViewState(state);
+}
+
+// default utility: set viewmode based on yaml key 'viewmode'; defaults to
+// Ob default if passed in null for value.
+function viewStateHandler(app: App, leaf: WorkspaceLeaf, value: any): void {
+	if (value) {
+		setViewState(leaf, value);
+	} else {
+		setViewState(leaf, this.SECONDARY_DEFAULT_VIEWSTATE);
+	}
+}
+
+// special case -- switching panes should _NOT_ revert setting.
+function pinStateHandler(app: App, leaf: WorkspaceLeaf, value: any): void {
+	if (value) {
+		leaf.setPinned(true);
+	}
+}
+
+function directionHandler(app: App, leaf: WorkspaceLeaf, value: any): void {
+	if (value) {
+		// @ts-ignore; unexported
+		leaf.containerEl.style.direction = 'rtl';
+	} else {
+		// @ts-ignore
+		leaf.containerEl.style.direction = 'ltr';
+	}
+}
+
 export default class PerfileConfigsPlugin extends Plugin {
 	settings: PerfileConfigsSettings;
 
 	MAIN_KEY = "perfile_configs";
+	SECONDARY_DEFAULT_VIEWSTATE = "live"
+
+	// on null value, the ConfigHandler should _reset_ the leaf for non-customized usage.
 	frontmatterKeyRecords = new Map<string, PerfileConfigHandler>();
 
 	async onload() {
@@ -45,37 +89,20 @@ export default class PerfileConfigsPlugin extends Plugin {
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new PerfileConfigsSettingTab(this.app, this));
 
-		// default utility: set viewmode based on yaml key 'viewmode';
-		this.frontmatterKeyRecords.set("viewmode", (app: App, leaf: WorkspaceLeaf, value: any) => {
-			let state = leaf.getViewState();
-			state.state.mode = value;
-			if (value === "source") {
-				state.state.source = true;
-			} else if (value === "live") {
-				state.state.mode = "source";
-				state.state.source = false;
-			}
-			leaf.setViewState(state);
-		});
-
-		this.frontmatterKeyRecords.set("pinned", (app: App, leaf: WorkspaceLeaf, value: any) => {
-			if (value) {
-				leaf.setPinned(true);
-			}
-		});
+		this.frontmatterKeyRecords.set("viewmode", viewStateHandler);
+		this.frontmatterKeyRecords.set("pinned", pinStateHandler);
+		this.frontmatterKeyRecords.set("rtl", directionHandler);
 
 		const updateLeaves = async (): Promise<void> => {
 			var leaves = getOpenLeaves(this.app);
 			for (let leaf of leaves) {
 				let frontmatter = getFrontMatter(leaf);
-				if (frontmatter && this.MAIN_KEY in frontmatter) {
-					let options = getFrontMatter(leaf)[this.MAIN_KEY];
-					if (options) {
-						for (let p of this.frontmatterKeyRecords.entries()) {
-							if (options[p[0]]) {
-								p[1](this.app, leaf, options[p[0]]);
-							}
-						}
+				let options = frontmatter && this.MAIN_KEY in frontmatter ? frontmatter[this.MAIN_KEY] : {};
+				for (let p of this.frontmatterKeyRecords.entries()) {
+					if (options[p[0]]) {
+						p[1](this.app, leaf, options[p[0]]);
+					} else {
+						p[1](this.app, leaf, null);
 					}
 				}
 			}
