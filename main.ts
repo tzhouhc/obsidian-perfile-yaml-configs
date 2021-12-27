@@ -53,18 +53,24 @@ function viewStateHandler(app: App, leaf: WorkspaceLeaf, value: any): void {
 	if (value) {
 		setViewState(leaf, value);
 	} else {
-		setViewState(leaf, this.SECONDARY_DEFAULT_VIEWSTATE);
+		let config = app.vault.config;
+		// @ts-ignore
+		if ("preview" === config.defaultViewMode) {
+			setViewState(leaf, "preview");
+		} else {
+			setViewState(leaf, config.livePreview ? "live" : "source");
+		}
 	}
 }
 
 // special case -- switching panes should _NOT_ revert setting.
-function pinStateHandler(app: App, leaf: WorkspaceLeaf, value: any): void {
+function pinStateHandler(_: App, leaf: WorkspaceLeaf, value: any): void {
 	if (value) {
 		leaf.setPinned(true);
 	}
 }
 
-function directionHandler(app: App, leaf: WorkspaceLeaf, value: any): void {
+function directionHandler(_: App, leaf: WorkspaceLeaf, value: any): void {
 	if (value) {
 		// @ts-ignore; unexported
 		leaf.containerEl.style.direction = 'rtl';
@@ -78,7 +84,6 @@ export default class PerfileConfigsPlugin extends Plugin {
 	settings: PerfileConfigsSettings;
 
 	MAIN_KEY = "perfile_configs";
-	SECONDARY_DEFAULT_VIEWSTATE = "live"
 
 	// on null value, the ConfigHandler should _reset_ the leaf for non-customized usage.
 	frontmatterKeyRecords = new Map<string, PerfileConfigHandler>();
